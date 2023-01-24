@@ -39,5 +39,59 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
     PARTS:
-    // Put your code here:
+
+    // c-instruction:
+    //   1   1   1   a   c   c   c   c   c   c   d   d   d   j   j   j
+    //              a/m  zx  nx  zy  ny  f  no   a   d   m   ng  zr  gr
+
+    And(a=instruction[15], b=instruction[5], out=wa);   // write to A register
+    And(a=instruction[15], b=instruction[4], out=wd);   // write to D register
+    And(a=instruction[15], b=instruction[3], out=writeM);   // write to Memory
+    And(a=instruction[15], b=instruction[2], out=jng);   // jump if output is negative
+    And(a=instruction[15], b=instruction[1], out=jzr);   // jump if output is equals to zero
+    And(a=instruction[15], b=instruction[0], out=jgt);   // jump if output is greater than zero
+
+    Not(in=instruction[15], out=ains);  // A-instruction
+
+    // if it's an A-instruction (instruction[15] == 0),
+    // or it's an C-instruction (instruction[15] == 1), 
+    // and the destination of the instruction includes A register (instruction[5] == 1),
+    // write it to A register.
+    Mux16(a=instruction, b=output, sel=instruction[15], out=aregin);
+    Or(a=ains, b=wa, out=aregload);
+    ARegister(in=aregin, load=aregload, out=aregout, out[0..14]=addressM);
+
+    // if the destination of the instruction includes D register (instruction[4] == 1),
+    // write it to D register.
+    DRegister(in=output, load=wd, out=dregout);
+
+    // if it's a C-instruction,
+    // and if a == 0, send A register to ALU,
+    // else send M to ALU.
+    Mux16(a=aregout, b=inM, sel=instruction[12], out=am);
+    ALU(
+        x=dregout, y=am,
+        zx=instruction[11], nx=instruction[10],
+        zy=instruction[9], ny=instruction[8],
+        f=instruction[7], no=instruction[6],
+        out=output, out=outM,
+        out[0..7]=gbp, out[8..15]=lbp,
+        zr=zr, ng=ng
+    );
+
+    // if it's C-instruction and the destination of instruction includes Memory,
+    // send the output of ALU to Memory.
+
+    // jump conditions
+    Not(in=ng, out=notng);
+    Or8Way(in=gbp, out=p1); Or8Way(in=lbp, out=p2); Or(a=p1, b=p2, out=p3);
+    And(a=p3, b=notng, out=gt);
+
+    And(a=jng, b=ng, out=jmpng);
+    And(a=jzr, b=zr, out=jmpzr);
+    And(a=jgt, b=gt, out=jmpgt);
+    Or(a=jmpng, b=jmpzr, out=t1);
+    Or(a=t1, b=jmpgt, out=jmp);
+    Not(in=jmp, out=inc);
+    PC(in=aregout, load=jmp, inc=inc, reset=reset, out[0..14]=pc);
 }
